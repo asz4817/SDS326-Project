@@ -125,7 +125,7 @@ print(paste("Mean RMSE from k=10 CV: ", mean(errors)))
 
 The Cross-Validation to our linear model also produces a mean RMSE of 1.06, which means our model does not overfit too much, and does fairly well at predicting new data compared to the RMSE of the training data, which is good.
 
-For future considerations, since our coefficients are all fairly small and pretty equal in magnitude, we could implement ridge or lasso regression in another attempt to perform feature selection so that the more important predictors are weighted more in our model, which can hopefully tell us more information. Additionally, since there are so many categorical predictors in our data set, perhaps we could use \_\_\_\_\_ to better work with these categorical variables.
+For future considerations, since our coefficients are all fairly small and pretty equal in magnitude, we could implement ridge or lasso regression in another attempt to perform feature selection so that the more important predictors are weighted more in our model, which can hopefully tell us more information. Additionally, since there are so many categorical predictors in our data set, perhaps we could use decision trees or a step function to better work with these categorical variables.
 
 **Q2**
 
