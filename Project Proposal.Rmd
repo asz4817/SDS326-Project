@@ -1,0 +1,136 @@
+---
+title: "Project Proposal"
+author: Amanda, Tony, Harry, Geena
+output: html_document
+---
+
+## Data Sets
+
+-   [Austin Animal Center Intakes](https://data.austintexas.gov/Health-and-Community-Services/Austin-Animal-Center-Intakes/wter-evkm/about_data): This dataset logs all of the Austin Animal Shelter Intakes (the animals that enters the shelter), and keeps track of the time the animal was taken in, where it was found, the intake type (stray, owner surrenders, etc), intake conditions of the animal, what type/breed the animal is, age upon intake, and a color description of the animal. The dataset begins from Oct 1st, 2013, and is updated regularly. 
+
+-   [Austin Animal Center Outcomes](https://data.austintexas.gov/Health-and-Community-Services/Austin-Animal-Center-Outcomes/9t4d-g238/about_data): This dataset mirrors the Intakes dataset, except it records data about the animals that leave the shelter, whether it is because of an adoption, transfer (of shelter/facilities), or euthanasia. This dataset has the same variables as the intakes dataset, with the addition of the outcome type (in place of intake type/condition), and has date of birth as well.
+
+For this project, because of the immense size of the data set, we will be using only data from 2024 (Jan 1-Dec 31, 2024). Our final dataset will join the intakes and outcomes dataset into one that only has information about animals that were taken in and left the shelter in 2024, with the key variables: Intake Type, Intake Condition, Animal Type, Sex (including if they were spayed/neutered), Age, Outcome Type, Outcome Date, Date of Birth, and Length of Stay (which was calculated from the outcome date - intake date).
+
+Here is a sample of our final data set:
+
+```{r include=F}
+# load in libraries
+library(tidyverse)
+library(dplyr)
+
+#Load in datasets and initial cleaning
+outcomes <- read_csv("Austin_Animal_Center_Outcomes_20250203.csv")
+intakes <- read_csv("Austin_Animal_Center_Intakes_20250203.csv")
+
+outcomes_clean <- outcomes |> mutate(OutcomeDate = as.Date(DateTime, '%m/%d/%Y %H:%M:%S')) |>
+  select(-c(DateTime, MonthYear, `Outcome Subtype`, Name, `Animal Type`, Breed, Color))
+intakes_clean <- intakes |>  mutate(IntakeDate = as.Date(DateTime, '%m/%d/%Y %H:%M:%S')) |> select(-c(DateTime, MonthYear))
+
+
+#inner join the datasets, and remove the duplicate rows from the multiple stays
+data <- merge(intakes_clean, outcomes_clean, by="Animal ID")
+
+#Clean up merged dataset
+clean <- data |>
+  group_by(`Animal ID`) |>
+  mutate(LengthofStay = OutcomeDate - IntakeDate) |>
+  group_by(`Animal ID`) |>
+  mutate(drop = LengthofStay < 0 |(LengthofStay >= max(LengthofStay) & n() > 1)) |>
+  ungroup() |>
+  filter(drop == F) |>
+  select(-c("drop"))
+
+shelter_clean <- clean |>
+  mutate(DOB = as.Date(`Date of Birth`, '%m/%d/%Y'),
+         LengthofStay = as.numeric(LengthofStay),
+         Age = case_when(
+           str_detect(`Age upon Outcome`, "years") ~ as.numeric(gsub(" years", "", `Age upon Outcome`)),
+           str_detect(`Age upon Outcome`, "months") ~ as.numeric(gsub(" months", "", `Age upon Outcome`))/12,
+           str_detect(`Age upon Outcome`, "year") ~ as.numeric(1),
+           str_detect(`Age upon Outcome`, "month") ~ as.numeric(1/12),
+           str_detect(`Age upon Outcome`, "weeks") ~ as.numeric(gsub(" weeks", "", `Age upon Outcome`))/52,
+           str_detect(`Age upon Outcome`, "week") ~ 1/52,
+           str_detect(`Age upon Outcome`, "days") ~ as.numeric(gsub(" days", "", `Age upon Outcome`))/365,
+           str_detect(`Age upon Outcome`, "day") ~ 1/365,
+         )) |>
+  select(`Animal ID`, Name, IntakeType = `Intake Type`, IntakeCondition = `Intake Condition`, AnimalType=`Animal Type`, Sex = `Sex upon Intake`, Age, OutcomeType=`Outcome Type`, OutcomeDate, LengthofStay, DOB)
+
+shelter_clean$AnimalType <- as.factor(shelter_clean$AnimalType)
+shelter_clean$Sex <- as.factor(shelter_clean$Sex)
+shelter_clean$IntakeCondition <- as.factor(case_when(
+  shelter_clean$IntakeCondition %in% c("Sick", "Agonal", "Injured", "Med Attn", "Med Urgent", "Medical", "Neurologic", "Parvo") ~ "Medical",
+  shelter_clean$IntakeCondition %in% c("Other", "Unknown") ~ "Other",
+  TRUE ~ as.character(shelter_clean$IntakeCondition)
+))
+shelter_clean <- shelter_clean |> mutate(log_LOS = log(1+LengthofStay), log_Age = log(1+Age, 10), sqrt_Age = log(1+sqrt(Age)))
+```
+
+```{r echo=F}
+head(shelter_clean)
+```
+
+## Questions
+
+For each question, you need to include initial results, such as figures/ plots and some simple analyses (e.g., linear and non-linear models, tree-based methods, etc.).
+
+**Q1 - Using the available predictors, is it possible to predict the length of stay of an animal that comes into the Austin animal shelter?**
+
+Looking at the variables in our dataset, it seems like most of the predictors would have a relationship with the length of stay - especially the animal type, gender, and age, but maybe also how the animal was introduced to the shelter.
+
+There seems to be a pretty extreme skew in both of our numeric variables, so we look at the relationship between the log transforms of both:
+
+```{r echo=F, fig.width=7, fig.height=3}
+par(mfrow = c(1, 2))
+plot(shelter_clean$Age, shelter_clean$LengthofStay, xlab="Age", ylab="Length of Stay", main="Untransformed")
+plot(shelter_clean$log_Age, shelter_clean$log_LOS, xlab="log(Age)", ylab="log_LOS", main="Log Transformed" )
+```
+
+We can run an initial linear regression (with the log of both numeric variables) to see if there are any linear relationships.
+
+```{r echo=F}
+lin_model <- lm(as.numeric(log_LOS) ~ log_Age + AnimalType + IntakeCondition + Sex + OutcomeType,data=shelter_clean)
+out <- summary(lin_model)
+print(paste("Adjusted R Squared", out$adj.r.squared))
+```
+
+As there are several categorical variables with many levels, the summary output is left out of this document. However, our adjusted R-squared value is 0.396, which means our linear model explains less than half of the variability in our length of stay variable. Our RMSE is also fairly low, at 1.063. If we use the AIC step criterion to select our best subset, we are still given the full model with all of the predictors (log_Age + AnimalType + IntakeCondition + Sex + OutcomeType).
+
+```{r echo=F}
+set.seed(123) 
+k=10
+  n <- nrow(shelter_clean)
+  folds <- sample(rep(1:k, length.out = n))  # Assign each row to a fold
+  
+  errors <- numeric(k)  # Store errors for each fold
+  
+  for (i in 1:k) {
+    # Split data: Training and Validation sets
+    train_data <- shelter_clean[folds != i, ]
+    test_data  <- shelter_clean[folds == i, ]
+    
+    # Train model on training set
+    model <- lm(as.numeric(log_LOS) ~ log_Age + AnimalType + IntakeCondition + Sex + OutcomeType, data = train_data)
+    
+    # Predict on test set
+    predictions <- predict(model, newdata = test_data)
+    
+    # Compute Mean Squared Error (MSE)
+    actuals <-test_data[['log_LOS']] # Extract response variable
+    errors[i] <- sqrt(mean((actuals - predictions)^2, na.rm=T))
+  }
+  
+print(paste("Mean RMSE from k=10 CV: ", mean(errors)))
+```
+
+The Cross-Validation to our linear model also produces a mean RMSE of 1.06, which means our model does not overfit too much, and does fairly well at predicting new data compared to the RMSE of the training data, which is good.
+
+For future considerations, since our coefficients are all fairly small and pretty equal in magnitude, we could implement ridge or lasso regression in another attempt to perform feature selection so that the more important predictors are weighted more in our model, which can hopefully tell us more information. Additionally, since there are so many categorical predictors in our data set, perhaps we could use \_\_\_\_\_ to better work with these categorical variables.
+
+**Q2**
+
+**Q3**
+
+**Q4**
+
+### 
