@@ -64,6 +64,11 @@ shelter_clean$IntakeCondition <- as.factor(case_when(
   TRUE ~ as.character(shelter_clean$IntakeCondition)
 ))
 shelter_clean <- shelter_clean |> mutate(log_LOS = log(1+LengthofStay), log_Age = log(1+Age, 10), sqrt_Age = log(1+sqrt(Age)))
+
+#Create the logistic regression adoption variable for outcome type
+shelter_clean <- shelter_clean |>
+  mutate(Adoption = ifelse(OutcomeType == "Adoption", 1, 0), age2 = sqrt(Age)) |> 
+  filter(!is.na(Adoption))
 ```
 
 ```{r echo=F}
