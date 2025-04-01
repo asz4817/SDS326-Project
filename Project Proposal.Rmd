@@ -4,6 +4,10 @@ author: Amanda, Tony, Harry, Geena
 output: html_document
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
 ## Data Sets
 
 -   [Austin Animal Center Intakes](https://data.austintexas.gov/Health-and-Community-Services/Austin-Animal-Center-Intakes/wter-evkm/about_data): This dataset logs all of the Austin Animal Shelter Intakes (the animals that enters the shelter), and keeps track of the time the animal was taken in, where it was found, the intake type (stray, owner surrenders, etc), intake conditions of the animal, what type/breed the animal is, age upon intake, and a color description of the animal. The dataset begins from Oct 1st, 2013, and is updated regularly. 
@@ -18,6 +22,7 @@ Here is a sample of our final data set:
 # load in libraries
 library(tidyverse)
 library(dplyr)
+library(plotROC)
 
 #Load in datasets and initial cleaning
 outcomes <- read_csv("Austin_Animal_Center_Outcomes_20250203.csv")
@@ -132,10 +137,49 @@ The Cross-Validation to our linear model also produces a mean RMSE of 1.06, whic
 
 For future considerations, since our coefficients are all fairly small and pretty equal in magnitude, we could implement ridge or lasso regression in another attempt to perform feature selection so that the more important predictors are weighted more in our model, which can hopefully tell us more information. Additionally, since there are so many categorical predictors in our data set, perhaps we could use decision trees or a step function to better work with these categorical variables.
 
-**Q2**
+**Q2 - Can we predict adoptability based on the age upon intake?**
 
-**Q3**
+```{r}
+mean(shelter_clean$Adoption)
+```
 
-**Q4**
+About 61% animals were adopted in the dataset.
 
-### 
+```{r echo=F}
+ggplot(data = shelter_clean) + geom_histogram(aes(x = Age)) + labs(title="Distribution of Age")
+```
+
+We can see from the graph that the data is skewed heavily left. Let's fit a logistic model to the data.
+
+```{r echo=F}
+# Fit the model
+fit_log <- glm(Adoption ~ Age, data = shelter_clean, family = "binomial")
+summary(fit_log)
+```
+
+The output gives the logit-form of the model which is: ln(p hat / 1-p hat) = 0.62524 - 0.11009 \* Age, where p hat is the probability of the animal being adopted (1 = adopted).
+
+```{r echo=F}
+shelter_predict <- shelter_clean |>
+  # Create new variables for probability and predicted values
+  mutate(probability = predict(fit_log, type = "response"),
+         predicted = ifelse(probability > 0.3, 1, 0)) |>
+  select(Age, Adoption, probability, predicted)
+```
+
+Here is a visualization of how our logistic regression is categorizing our variables. As you can see, our model is making a lot of errors. Maybe in the future we could consider more predictors, or try another classification method such as a classification tree.
+
+```{r echo=F}
+shelter_predict |>
+  ggplot(aes(x = Age, y = Adoption)) +
+  # Consider a logistic regression model
+  geom_smooth(method = "glm", se = FALSE, 
+              method.args = list(family = "binomial"),
+              color = "steelblue", size = 2) + 
+  # Show original data, colored by predicted values
+  geom_point(size = 4, alpha = 0.5, 
+             aes(color = as.factor(predicted))) + # add as.factor() to only see 2 categories
+  labs(x = "Age", 
+       y = "Outcome ",
+       title = "Logistic regression model to predict adoption based on age")
+```
