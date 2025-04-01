@@ -90,7 +90,7 @@ Looking at the variables in our dataset, it seems like most of the predictors wo
 
 There seems to be a pretty extreme skew in both of our numeric variables, so we look at the relationship between the log transforms of both:
 
-```{r echo=F, fig.width=7, fig.height=3}
+```{r echo=F, fig.height=3, fig.align = "center"}
 par(mfrow = c(1, 2))
 plot(shelter_clean$Age, shelter_clean$LengthofStay, xlab="Age", ylab="Length of Stay", main="Untransformed")
 plot(shelter_clean$log_Age, shelter_clean$log_LOS, xlab="log(Age)", ylab="log_LOS", main="Log Transformed" )
@@ -145,7 +145,7 @@ mean(shelter_clean$Adoption)
 
 About 61% animals were adopted in the dataset.
 
-```{r echo=F}
+```{r echo=F, fig.height = 3, fig.align = "center"}
 ggplot(data = shelter_clean) + geom_histogram(aes(x = Age)) + labs(title="Distribution of Age")
 ```
 
@@ -169,7 +169,7 @@ shelter_predict <- shelter_clean |>
 
 Here is a visualization of how our logistic regression is categorizing our variables. As you can see, our model is making a lot of errors. Maybe in the future we could consider more predictors, or try another classification method such as a classification tree.
 
-```{r echo=F}
+```{r echo=F, fig.height=4, fig.width = 7, fig.align = "center"}
 shelter_predict |>
   ggplot(aes(x = Age, y = Adoption)) +
   # Consider a logistic regression model
