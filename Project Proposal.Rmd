@@ -154,7 +154,8 @@ We can see from the graph that the data is skewed heavily left. Let's fit a logi
 ```{r echo=F}
 # Fit the model
 fit_log <- glm(Adoption ~ Age, data = shelter_clean, family = "binomial")
-summary(fit_log)
+fit_log$call
+summary(fit_log)$coefficients
 ```
 
 The output gives the logit-form of the model which is: ln(p hat / 1-p hat) = 0.62524 - 0.11009 \* Age, where p hat is the probability of the animal being adopted (1 = adopted).
@@ -169,7 +170,7 @@ shelter_predict <- shelter_clean |>
 
 Here is a visualization of how our logistic regression is categorizing our variables. As you can see, our model is making a lot of errors. Maybe in the future we could consider more predictors, or try another classification method such as a classification tree.
 
-```{r echo=F, fig.height=4, fig.width = 7, fig.align = "center"}
+```{r echo=F, fig.height=3, fig.width = 6, fig.align = "center"}
 shelter_predict |>
   ggplot(aes(x = Age, y = Adoption)) +
   # Consider a logistic regression model
