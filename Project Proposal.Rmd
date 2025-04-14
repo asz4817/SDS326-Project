@@ -91,6 +91,7 @@ Looking at the variables in our dataset, it seems like most of the predictors wo
 There seems to be a pretty extreme skew in both of our numeric variables, so we look at the relationship between the log transforms of both:
 
 ```{r echo=F, fig.height=3, fig.align = "center"}
+hist(shelter_clean$Age, xlab = "Age", main="Distribution of Age")
 par(mfrow = c(1, 2))
 plot(shelter_clean$Age, shelter_clean$LengthofStay, xlab="Age", ylab="Length of Stay", main="Untransformed")
 plot(shelter_clean$log_Age, shelter_clean$log_LOS, xlab="log(Age)", ylab="log_LOS", main="Log Transformed" )
@@ -99,7 +100,9 @@ plot(shelter_clean$log_Age, shelter_clean$log_LOS, xlab="log(Age)", ylab="log_LO
 We can run an initial linear regression (with the log of both numeric variables) to see if there are any linear relationships.
 
 ```{r echo=F}
-lin_model <- lm(as.numeric(log_LOS) ~ log_Age + AnimalType + IntakeCondition + Sex + OutcomeType,data=shelter_clean)
+lin_model <- lm(as.numeric(log_LOS) ~ log_Age + AnimalType + IntakeCondition + Sex + OutcomeType,
+                data=shelter_clean)
+summary(lin_model)
 out <- summary(lin_model)
 print(paste("Adjusted R Squared", out$adj.r.squared))
 ```

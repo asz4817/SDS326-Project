@@ -1,0 +1,202 @@
+---
+title: "ML Final Project"
+author: "Amanda, Tony, Harry, Geena"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+```{r echo=F}
+library(glmnet)
+library(tidyverse)
+library(tree)
+library(ISLR2)
+library(randomForest)
+library(MLmetrics)
+library(BART)
+
+shelter_clean <- read_csv("shelter_clean.csv")
+
+shelter_clean$AnimalType <- as.factor(shelter_clean$AnimalType)
+shelter_clean$Sex <- as.factor(shelter_clean$Sex)
+shelter_clean$IntakeCondition <- as.factor(shelter_clean$IntakeCondition)
+shelter_clean$OutcomeType <- as.factor(shelter_clean$OutcomeType)
+
+
+set.seed(123)
+train_index <- sample(1:nrow(shelter_clean), floor(0.8 * nrow(shelter_clean)))
+train <- shelter_clean[train_index, ]
+test <- shelter_clean[-train_index, ]
+```
+
+# Introduction
+
+Describe the questions and data that we are interested in.
+
+Data Cleaning Process to create shelter_clean.csv: (maybe walk through the process?)
+
+```{r eval=F}
+#Load in datasets and initial cleaning
+outcomes <- read_csv("Austin_Animal_Center_Outcomes_20250203.csv")
+intakes <- read_csv("Austin_Animal_Center_Intakes_20250203.csv")
+
+#
+outcomes_clean <- outcomes |> mutate(OutcomeDate = as.Date(DateTime, '%m/%d/%Y %H:%M:%S')) |>
+  select(-c(DateTime, MonthYear, `Outcome Subtype`, Name, `Animal Type`, Breed, Color))
+intakes_clean <- intakes |>  mutate(IntakeDate = as.Date(DateTime, '%m/%d/%Y %H:%M:%S')) |> select(-c(DateTime, MonthYear))
+
+
+#inner join the datasets
+data <- merge(intakes_clean, outcomes_clean, by="Animal ID")
+
+#Clean up merged dataset, and remove the duplicate rows from the multiple stays
+clean <- data |>
+  group_by(`Animal ID`) |>
+  mutate(LengthofStay = OutcomeDate - IntakeDate) |>
+  group_by(`Animal ID`) |>
+  mutate(drop = LengthofStay < 0 |(LengthofStay >= max(LengthofStay) & n() > 1)) |>
+  ungroup() |>
+  filter(drop == F) |>
+  select(-c("drop"))
+
+#Create Date of Birth and then cast Age as a numeric variable
+shelter_clean <- clean |>
+  mutate(DOB = as.Date(`Date of Birth`, '%m/%d/%Y'),
+         LengthofStay = as.numeric(LengthofStay),
+         Age = case_when(
+           str_detect(`Age upon Outcome`, "years") ~ as.numeric(gsub(" years", "", `Age upon Outcome`)),
+           str_detect(`Age upon Outcome`, "months") ~ as.numeric(gsub(" months", "", `Age upon Outcome`))/12,
+           str_detect(`Age upon Outcome`, "year") ~ as.numeric(1),
+           str_detect(`Age upon Outcome`, "month") ~ as.numeric(1/12),
+           str_detect(`Age upon Outcome`, "weeks") ~ as.numeric(gsub(" weeks", "", `Age upon Outcome`))/52,
+           str_detect(`Age upon Outcome`, "week") ~ 1/52,
+           str_detect(`Age upon Outcome`, "days") ~ as.numeric(gsub(" days", "", `Age upon Outcome`))/365,
+           str_detect(`Age upon Outcome`, "day") ~ 1/365,
+         )) |>
+  select(`Animal ID`, Name, IntakeType = `Intake Type`, IntakeCondition = `Intake Condition`, AnimalType=`Animal Type`, Sex = `Sex upon Intake`, Age, OutcomeType=`Outcome Type`, OutcomeDate, LengthofStay, DOB)
+
+#Make all of the categorical variables as factors
+shelter_clean$AnimalType <- as.factor(shelter_clean$AnimalType)
+shelter_clean$Sex <- as.factor(shelter_clean$Sex)
+shelter_clean$IntakeCondition <- as.factor(case_when(
+  shelter_clean$IntakeCondition %in% c("Sick", "Agonal", "Injured", "Med Attn", "Med Urgent", "Medical", "Neurologic", "Parvo") ~ "Medical",
+  shelter_clean$IntakeCondition %in% c("Other", "Unknown") ~ "Other",
+  TRUE ~ as.character(shelter_clean$IntakeCondition)
+))
+
+#Create transformed numeric variables
+shelter_clean <- shelter_clean |> mutate(log_LOS = log(1+LengthofStay), log_Age = log(1+Age, 10))
+
+#Create the logistic regression adoption variable for outcome type
+shelter_clean <- shelter_clean |>
+  mutate(Adoption = ifelse(OutcomeType == "Adoption", 1, 0), age2 = sqrt(Age)) |> 
+  filter(!is.na(Adoption))
+```
+
+# Methods
+
+## Q1: Using the available predictors, is it possible to predict the length of stay of an animal that comes into the Austin animal shelter?
+
+Initially, we tried to fit a multiple linear regression to predict the length of stay of an animal, which gave us the following results:
+
+```{r}
+lin_model <- lm(as.numeric(log_LOS) ~ log_Age + AnimalType + IntakeCondition + Sex + OutcomeType,data=shelter_clean)
+summary(lin_model)
+```
+
+This model was not the best at predicting the length of stay of animals. The adjusted R-squared value was only about .386. If we look at the residual standard error though, we can see that our average error is only about 1 day, which is pretty good in context. However, we should also consider how many of the data points were from short term stays rather than longer term stereotypical adoption cases when interpreting the error of 1 day.
+
+From the output, we can see that there isn't a very strong linear relationship between the predictors and the response variable. However, before we move on to another model to predict the length of stay, we can try to regularize the model using lasso regression to see if we can suppress some of the less important predictors - which will be helpful especially as almost all of the predictors are indicator variables which are hard to control in regular linear regression.
+
+```{r}
+#Lasso Regularization
+set.seed(123)
+response <- train$log_LOS
+predictors <- model.matrix(log_LOS~log_Age + AnimalType + IntakeCondition + Sex + OutcomeType, shelter_clean)
+
+ridge_model <- cv.glmnet(predictors[train_index, ], response, alpha = 1)
+plot(ridge_model)
+ridge_model$lambda.min
+
+predict(glmnet(predictors[train_index, ], response, alpha = 1), type = "coefficients", s = ridge_model$lambda.min)[1:26,]
+
+
+
+pred <- predict(glmnet(predictors[train_index, ], response, alpha = 1), s = ridge_model$lambda.min, newx = predictors[-train_index, ])
+sqrt(mean((pred - test$log_LOS)^2))
+```
+
+The Intake Condition variable is not as important now as shown by the smaller (sometimes 0) new coefficients, while most of the other coefficients were mostly unaffected by the lasso regression. Additionally from the output, we can see that the lambda chosen by the cross validation was very small, indicating that only a minimal regularization effect was applied to the linear regression (as larger lambda values tend to have a larger effect). This is reasonable, as our data set was very large (over 10,000 observations with only a handful of predictor variables), and these regularization techniques generally work best when the number of predictors and number of data points are of similar magnitude to each other.
+
+The linear regression and lasso regularization helped predict length of stay and see which variables were important, but it does assume that there are linear relationships between the predictor and response variable. To allow for more flexible relationships, we can fit a Generalized Additive Model (GAM) to model the non-linear effects of different predictors.
+
+*GEENA YOU CAN DO THE GAM MODEL THING HERE THX*
+
+Finally, we can switch to a completely new method, and see if a regression tree can offer any additional information about which predictors are more important, and predict the length of stay accurately.
+
+```{r}
+#Try simple regression tree
+tree <- tree(log_LOS~log_Age + AnimalType + IntakeCondition + Sex + OutcomeType, train)
+summary(tree)
+plot(tree)
+text(tree, pretty=1)
+yhat <- predict(tree, newdata = test)
+RMSE(yhat, test$log_LOS)
+```
+
+From the output, we have a pretty clean, simple tree. Since there are only 6 terminal nodes, we probably don't need to prune this tree, but we can check to be sure.
+
+```{r}
+#Prune?
+set.seed(123)
+cv_tree <- cv.tree(tree,  K = 10) #10-fold cross validation
+plot(cv_tree$size, cv_tree$dev,  type = 'b', xlab = 'Tree size', ylab = 'Cross validation error')
+
+pred <- predict(tree, newdata = test)
+RMSE(pred, test$log_LOS)^2
+```
+
+According to the graph, our original tree with 6 terminal nodes gives the best (lowest) error. Using this tree, we can see that our test error is 1.09, which is similar to our test errors from earlier methods. Maybe trying a random forest to help with potential variance in the model.
+
+```{r}
+#Random Forest
+set.seed(123)
+sequence_predictors <- seq(1, 5, by = 1)
+# We create the number of predictors in {1, 2, ..., 5}
+forest_test_error <- rep(0, length(sequence_predictors))
+# We create a sequence of test errors with 0 values for each number of trees
+for (i in 1:length(sequence_predictors))
+{
+  my_forest <- randomForest(log_LOS~log_Age + AnimalType + IntakeCondition + Sex + OutcomeType, data = train, mtry = sequence_predictors[i], ntree = 100, importance = TRUE)
+  pred <- predict(my_forest, newdata = test)
+  forest_test_error[i] <- RMSE(pred, test$log_LOS)^2
+}
+
+### Plot the test errors
+forest_test_error_data_frame <- as.data.frame(forest_test_error)
+ggplot(data = forest_test_error_data_frame, aes(x = seq(1,length(sequence_predictors), by = 1), y = forest_test_error)) + geom_line() + xlab("The number of predictors") + ylab("Test error")
+min <- which.min(forest_test_error)
+min
+
+my_forest <- randomForest(log_LOS~log_Age + AnimalType + IntakeCondition + Sex + OutcomeType, data=train, mtry = min, importance=TRUE)
+
+pred <- predict(my_forest, newdata = test)
+RMSE(pred, test$log_LOS)^2
+
+importance(my_forest)
+varImpPlot(my_forest)
+```
+
+Using cross validation, we chose the number of predictors to choose from at each split to be 2. After creating our random forest, we can see the RMSE of the random forest predictions, 0.935, is much better than all of the other models. Additionally, using this method, we can see which predictors are most important for this model - namely Outcome Type is important using both metrics, while the two metrics disagree over the importance of the other variables. In terms of increasing the MSE, Intake condition and Animal Type were important, while to increase the node purity, the Age and Sex were more important.
+
+Overall, we evaluated several models to predict the length of stay of an animal. Our models prove to be fairly good at predicting length of stay. There was an average error (RMSE) of only 1 or so in the test sets for most of our models, which means we are off by an average of 1 day when predicting which is pretty good in context. However, we must also consider that many length of stays are fairly short. Random forests seemed to provide the most accurate predictions, and Outcome Type was consistently the most important predictor across models, while Age and Animal Type were pretty important, and Lasso regression decided Intake Condition was not very important to predicting our response variable.
+
+## Q2:
+
+## Q3:
+
+# Conclusion and Future Work
+
+Conclusion and Future work instructions (DELETE): Summarize the results you obtain from the questions. You can also include some potential future work, such as those that you are not able to analyze in the final project or those that the current analyses are not sufficiently convincing.
