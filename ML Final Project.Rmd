@@ -35,7 +35,7 @@ test <- shelter_clean[-train_index, ]
 
 Describe the questions and data that we are interested in.
 
-Data Cleaning Process to create shelter_clean.csv: (maybe walk through the process?)
+Data Cleaning Process to create shelter_clean.csv: **(\@Geena** maybe walk through the process?)
 
 ```{r eval=F}
 #Load in datasets and initial cleaning
@@ -132,7 +132,7 @@ The Intake Condition variable is not as important now as shown by the smaller (s
 
 The linear regression and lasso regularization helped predict length of stay and see which variables were important, but it does assume that there are linear relationships between the predictor and response variable. To allow for more flexible relationships, we can fit a Generalized Additive Model (GAM) to model the non-linear effects of different predictors.
 
-*GEENA YOU CAN DO THE GAM MODEL THING HERE THX*
+***GEENA YOU CAN DO THE GAM MODEL THING HERE THX***
 
 Finally, we can switch to a completely new method, and see if a regression tree can offer any additional information about which predictors are more important, and predict the length of stay accurately.
 
