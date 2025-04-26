@@ -20,7 +20,7 @@ library(randomForest)
 library(MLmetrics)
 library(BART)
 library(dplyr)
-library(ggplot2)
+library(plotROC)
 
 shelter_clean <- read_csv("shelter_clean.csv")
 
@@ -256,8 +256,6 @@ Condition was not very important to predicting our response variable.
 ## Q2: Can we predict adoptability based on the age upon intake?
 
 ```{r}
-library(plotROC)
-library(ggplot2)
 mean(shelter_clean$Adoption)
 ```
 
@@ -360,6 +358,11 @@ random chance (which means it is bad at predicting).
 ## Q3: Can we predict adoption based on intake type?
 
 ```{r}
+intakes <- read.csv("Austin_Animal_Center_Intakes_20250203.csv")
+outcomes <- read.csv("Austin_Animal_Center_Outcomes_20250203.csv")
+
+data <- merge(intakes, outcomes, by = "Animal.ID")
+
 stray_abandoned <- data %>% filter(Intake.Type %in% c("Stray", "Abandoned"))
 public_assist_owner_surrender <- data %>% filter(Intake.Type %in% c("Public Assist", "Owner Surrender"))
 
